@@ -1,0 +1,5 @@
+# Artefacts de build Cordova / Android
+build/
+node_modules/
+*.apk
+.gradle/

@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#060608">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<title>Atelier de Fractales</title>
+<style>
+  :root{
+    --void:#060608;
+    --panel:rgba(15,16,22,0.66);
+    --hair:rgba(255,255,255,0.075);
+    --text:#ececf2;
+    --muted:#8c8da0;
+    --accent:#4f9dff;
+    --accent-2:#b15bff;
+    --radius:16px;
+    --mono:ui-monospace, "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, monospace;
+    --sans:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; height:100%; overflow:hidden; background:var(--void);
+    font-family:var(--sans); color:var(--text);
+    overscroll-behavior:none; touch-action:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  #gl{position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; background:var(--void);}
+
+  /* ---------- Barre supérieure ---------- */
+  .topbar{
+    position:fixed; top:0; left:0; right:0; z-index:5; pointer-events:none;
+    display:flex; align-items:center; gap:10px;
+    padding:max(10px, env(safe-area-inset-top)) 14px 10px;
+  }
+  .brand{display:flex; align-items:center; gap:11px; pointer-events:auto;}
+  .logo{
+    width:30px; height:30px; border-radius:9px; position:relative;
+    background:linear-gradient(140deg, var(--accent), var(--accent-2));
+    box-shadow:0 4px 18px -2px color-mix(in srgb, var(--accent) 60%, transparent);
+    transition:background .5s ease, box-shadow .5s ease;
+  }
+  .logo::after{ content:""; position:absolute; inset:6px; border-radius:5px; border:1.5px solid rgba(255,255,255,0.35); }
+  .title{font-weight:640; font-size:15.5px; letter-spacing:.2px; white-space:nowrap;}
+  .spacer{flex:1;}
+  .readout{
+    pointer-events:auto; display:flex; align-items:center; gap:10px;
+    font-family:var(--mono); font-size:11.5px; color:var(--muted);
+    background:var(--panel); border:1px solid var(--hair);
+    padding:7px 11px; border-radius:999px;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); white-space:nowrap;
+  }
+  .readout .zoom{color:var(--accent); font-weight:600;}
+  .icon-btn{
+    pointer-events:auto; width:42px; height:42px; flex:0 0 auto;
+    border-radius:13px; border:1px solid var(--hair);
+    background:var(--panel); color:var(--text);
+    display:grid; place-items:center; cursor:pointer;
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); transition:transform .12s ease;
+  }
+  .icon-btn:active{transform:scale(.94);}
+  @media(max-width:560px){ .readout .coords{display:none;} }
+
+  /* ---------- Panneau ---------- */
+  .panel{
+    position:fixed; z-index:6; left:12px; right:12px; bottom:12px;
+    background:var(--panel); border:1px solid var(--hair); border-radius:var(--radius);
+    backdrop-filter:blur(22px) saturate(150%); -webkit-backdrop-filter:blur(22px) saturate(150%);
+    box-shadow:0 24px 70px -10px rgba(0,0,0,.7);
+    padding:14px 14px calc(16px + env(safe-area-inset-bottom));
+    max-height:78vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    transform:translateY(135%); transition:transform .34s cubic-bezier(.22,1,.36,1);
+  }
+  .panel.open{transform:translateY(0);}
+  @media(min-width:760px){
+    .panel{left:auto; right:14px; top:66px; bottom:14px; width:344px; max-height:none; transform:translateX(125%);}
+    .panel.open{transform:translateX(0);}
+  }
+  .grip{width:40px; height:4px; border-radius:99px; background:rgba(255,255,255,.16); margin:0 auto 12px;}
+  @media(min-width:760px){ .grip{display:none;} }
+
+  .section{margin-top:4px; padding-top:16px; border-top:1px solid var(--hair);}
+  .section:first-of-type{border-top:0; padding-top:0;}
+  .sect-title{font-size:11px; letter-spacing:1.6px; text-transform:uppercase; color:var(--accent); margin:0 2px 12px; font-weight:600;}
+
+  .group{margin:16px 2px;}
+  .glabel{display:block; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--muted); margin-bottom:9px;}
+  .row{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px;}
+  .row .name{font-size:13px; color:var(--text);}
+  .row .val{font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:600;}
+
+  /* sélecteurs */
+  .seg{display:flex; gap:5px; background:rgba(0,0,0,.28); padding:4px; border-radius:13px;}
+  .seg button{flex:1; border:0; background:transparent; color:var(--muted); padding:10px 4px; border-radius:9px; font-size:12.5px; font-family:var(--sans); cursor:pointer; transition:color .18s, background .25s;}
+  .seg button.on{background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff; box-shadow:0 5px 16px -4px color-mix(in srgb, var(--accent) 70%, transparent);}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
+  .chip{border:1px solid var(--hair); background:rgba(0,0,0,.28); color:var(--muted); padding:11px 6px; border-radius:11px; font-size:12.5px; font-family:var(--sans); cursor:pointer; transition:.2s;}
+  .chip.on{background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff; border-color:transparent; box-shadow:0 5px 16px -4px color-mix(in srgb, var(--accent) 70%, transparent);}
+
+  /* curseurs */
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; border-radius:99px; margin:7px 0; background:linear-gradient(90deg, var(--accent), var(--accent-2)); outline:none; transition:background .5s ease;}
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:22px; height:22px; border-radius:50%; background:#fff; border:3px solid var(--accent); box-shadow:0 2px 9px rgba(0,0,0,.45); cursor:pointer; transition:border-color .5s ease;}
+  input[type=range]::-moz-range-thumb{width:22px; height:22px; border-radius:50%; background:#fff; border:3px solid var(--accent); cursor:pointer;}
+
+  /* interrupteurs */
+  .tog{display:flex; align-items:center; justify-content:space-between; margin:14px 2px;}
+  .tog .name{font-size:13px;}
+  .switch{width:46px; height:27px; border-radius:99px; border:1px solid var(--hair); background:rgba(255,255,255,.08); position:relative; cursor:pointer; padding:0; transition:background .25s, border-color .25s;}
+  .switch .knob{position:absolute; top:2px; left:2px; width:21px; height:21px; border-radius:50%; background:#fff; transition:transform .25s; box-shadow:0 1px 4px rgba(0,0,0,.4);}
+  .switch.on{background:linear-gradient(135deg, var(--accent), var(--accent-2)); border-color:transparent;}
+  .switch.on .knob{transform:translateX(19px);}
+
+  /* palettes */
+  .palettes{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .sw{height:42px; border-radius:11px; cursor:pointer; position:relative; border:2px solid transparent; transition:transform .12s ease;}
+  .sw:active{transform:scale(.95);}
+  .sw .nm{position:absolute; left:6px; bottom:5px; font-size:9.5px; color:#fff; font-weight:600; text-shadow:0 1px 3px rgba(0,0,0,.85); letter-spacing:.2px;}
+  .sw.on{border-color:#fff; box-shadow:0 0 0 2px var(--accent);}
+
+  /* boutons */
+  .actions{display:flex; gap:8px;}
+  .btn{flex:1; border:1px solid var(--hair); background:rgba(255,255,255,.045); color:var(--text); padding:13px; border-radius:13px; font-size:13px; font-weight:600; font-family:var(--sans); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:7px; transition:transform .12s ease;}
+  .btn:active{transform:scale(.97);}
+  .btn.primary{background:linear-gradient(135deg, var(--accent), var(--accent-2)); border:0; color:#fff; box-shadow:0 6px 20px -6px color-mix(in srgb, var(--accent) 75%, transparent); transition:background .5s ease, transform .12s ease;}
+
+  .julia,.stripe{display:none;}
+  .julia.show,.stripe.show{display:block;}
+  .hint{font-size:11px; color:var(--muted); text-align:center; margin-top:14px; line-height:1.6;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:8px;}
+  @media (prefers-reduced-motion: reduce){ .panel,.logo,input[type=range],.switch .knob{transition:none;} }
+</style>
+</head>
+<body>
+<canvas id="gl" role="img" aria-label="Fenêtre de visualisation de la fractale"></canvas>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo" aria-hidden="true"></div>
+    <div class="title">Atelier de Fractales</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="readout">
+    <span class="coords" id="coords">re −0.500&nbsp;&nbsp;im 0.000</span>
+    <span class="zoom" id="zoom">×1.0</span>
+  </div>
+  <button class="icon-btn" id="toggle" aria-label="Ouvrir les réglages">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="17" x2="18" y2="17"/>
+      <circle cx="17" cy="7" r="2.4"/><circle cx="11" cy="12" r="2.4"/><circle cx="15" cy="17" r="2.4"/>
+    </svg>
+  </button>
+</div>
+
+<div class="panel" id="panel">
+  <div class="grip"></div>
+
+  <!-- FORME -->
+  <div class="section">
+    <div class="sect-title">Forme</div>
+    <div class="group">
+      <span class="glabel">Type de fractale</span>
+      <div class="grid2" id="formeGrid">
+        <button class="chip on" data-shape="0">Mandelbrot</button>
+        <button class="chip" data-shape="1">Vaisseau ardent</button>
+        <button class="chip" data-shape="2">Tricorn</button>
+        <button class="chip" data-shape="3">Celtique</button>
+      </div>
+    </div>
+    <div class="tog">
+      <span class="name">Mode Julia</span>
+      <button class="switch" id="juliaSw" role="switch" aria-checked="false"><span class="knob"></span></button>
+    </div>
+    <div class="group">
+      <div class="row"><span class="name">Puissance (exposant)</span><span class="val" id="powerVal">2.0</span></div>
+      <input type="range" id="power" min="2" max="8" step="0.1" value="2" aria-label="Puissance">
+    </div>
+    <div class="group julia" id="juliaGroup">
+      <span class="glabel">Paramètre c = a + b·i</span>
+      <div class="row"><span class="name">a (réel)</span><span class="val" id="jrVal">−0.70</span></div>
+      <input type="range" id="jr" min="-2" max="2" step="0.001" value="-0.7" aria-label="Partie réelle de c">
+      <div class="row" style="margin-top:10px"><span class="name">b (imaginaire)</span><span class="val" id="jiVal">0.27</span></div>
+      <input type="range" id="ji" min="-2" max="2" step="0.001" value="0.27" aria-label="Partie imaginaire de c">
+      <button class="btn" id="anim" style="margin-top:12px">Animer le paramètre</button>
+    </div>
+  </div>
+
+  <!-- COULEUR -->
+  <div class="section">
+    <div class="sect-title">Couleur</div>
+    <div class="group">
+      <span class="glabel">Palette</span>
+      <div class="palettes" id="palettes"></div>
+    </div>
+    <div class="group">
+      <span class="glabel">Style de coloration</span>
+      <div class="seg" id="styleSeg">
+        <button data-style="0" class="on">Lisse</button>
+        <button data-style="1">Bandes</button>
+        <button data-style="2">Rayures</button>
+      </div>
+    </div>
+    <div class="group stripe" id="stripeGroup">
+      <div class="row"><span class="name">Fréquence des rayures</span><span class="val" id="stripeVal">6</span></div>
+      <input type="range" id="stripe" min="1" max="20" step="1" value="6" aria-label="Fréquence des rayures">
+    </div>
+    <div class="group">
+      <div class="row"><span class="name">Densité des couleurs</span><span class="val" id="densVal">1.0</span></div>
+      <input type="range" id="dens" min="0.2" max="4" step="0.1" value="1" aria-label="Densité">
+      <div class="row" style="margin-top:12px"><span class="name">Décalage des couleurs</span><span class="val" id="offVal">0.00</span></div>
+      <input type="range" id="off" min="0" max="1" step="0.005" value="0" aria-label="Décalage">
+    </div>
+    <div class="group">
+      <div class="row"><span class="name">Saturation</span><span class="val" id="satVal">1.00</span></div>
+      <input type="range" id="sat" min="0" max="2" step="0.01" value="1" aria-label="Saturation">
+      <div class="row" style="margin-top:12px"><span class="name">Luminosité</span><span class="val" id="brightVal">1.00</span></div>
+      <input type="range" id="bright" min="0.3" max="1.6" step="0.01" value="1" aria-label="Luminosité">
+    </div>
+    <div class="tog">
+      <span class="name">Couleurs inversées</span>
+      <button class="switch" id="invertSw" role="switch" aria-checked="false"><span class="knob"></span></button>
+    </div>
+    <div class="tog">
+      <span class="name">Cycle des couleurs</span>
+      <button class="switch" id="cycleSw" role="switch" aria-checked="false"><span class="knob"></span></button>
+    </div>
+  </div>
+
+  <!-- RENDU -->
+  <div class="section">
+    <div class="sect-title">Rendu</div>
+    <div class="group">
+      <div class="row"><span class="name">Itérations</span><span class="val" id="iterVal">320</span></div>
+      <input type="range" id="iter" min="50" max="1000" step="10" value="320" aria-label="Itérations">
+    </div>
+    <div class="group">
+      <span class="glabel">Qualité (anti-crénelage)</span>
+      <div class="seg" id="qualSeg">
+        <button data-aa="1" class="on">Normale</button>
+        <button data-aa="2">Élevée</button>
+      </div>
+    </div>
+    <div class="group">
+      <span class="glabel">Résolution d'export</span>
+      <div class="seg" id="expSeg">
+        <button data-exp="1" class="on">×1</button>
+        <button data-exp="2">×2</button>
+        <button data-exp="4">×4</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIONS -->
+  <div class="section">
+    <div class="actions" style="margin-bottom:8px">
+      <button class="btn" id="surprise">Surprise</button>
+      <button class="btn" id="resetAll">Réinitialiser</button>
+    </div>
+    <div class="actions" style="margin-bottom:8px">
+      <button class="btn" id="recenter">Recentrer</button>
+      <button class="btn primary" id="save">Enregistrer l'image</button>
+    </div>
+    <button class="btn" id="copylink" style="width:100%">Copier le lien de cette vue</button>
+    <div class="hint">Glissez pour vous déplacer · molette ou pincez pour zoomer<br>Le zoom profond est limité par la précision (≈ 10¹²×)</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ===================== Palettes ===================== */
+const PALETTES = [
+  { name:"Arc-en-ciel", accent:"#4f9dff", accent2:"#b15bff", css:"linear-gradient(90deg,#7b2ff7,#2f80ff,#22d3ee,#ffe600,#ff5e3a)", a:[.5,.5,.5], b:[.5,.5,.5], c:[1,1,1], d:[0,.33,.67] },
+  { name:"Feu",         accent:"#ff8a3d", accent2:"#ff4d4d", css:"linear-gradient(90deg,#1a0500,#7a0010,#ff3d00,#ffae00,#fff3c4)", a:[.5,.25,.12], b:[.5,.35,.18], c:[1,1,1], d:[0,.08,.15] },
+  { name:"Océan",       accent:"#22d3ee", accent2:"#2f80ff", css:"linear-gradient(90deg,#001b3a,#0050a0,#0098c8,#34e0d0,#dffbff)", a:[.2,.45,.6], b:[.2,.35,.4], c:[1,1,1], d:[.55,.5,.45] },
+  { name:"Crépuscule",  accent:"#c084fc", accent2:"#fb7185", css:"linear-gradient(90deg,#1a0033,#6a1b9a,#c026d3,#ff6d00,#ffd166)", a:[.5,.3,.5], b:[.5,.35,.5], c:[1,1,1], d:[0,.25,.55] },
+  { name:"Forêt",       accent:"#4ade80", accent2:"#a3e635", css:"linear-gradient(90deg,#04261a,#0b6e3b,#56d364,#c7f25a)", a:[.25,.45,.25], b:[.3,.4,.3], c:[1,1,1], d:[.4,.2,.4] },
+  { name:"Or & Nuit",   accent:"#fbbf24", accent2:"#f59e0b", css:"linear-gradient(90deg,#0a0a0a,#4a3500,#a9791f,#f4c542,#fff2c2)", a:[.5,.4,.18], b:[.5,.4,.16], c:[1,1,1], d:[0,.1,.2] },
+  { name:"Magma",       accent:"#ff5e9c", accent2:"#ffb84d", css:"linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf)", a:[.5,.2,.3], b:[.5,.4,.3], c:[1,1,1], d:[0,.15,.35] },
+  { name:"Glacier",     accent:"#7dd3fc", accent2:"#c4b5fd", css:"linear-gradient(90deg,#06121f,#0e3a5f,#2c7da0,#a9d6e5,#e8f6ff)", a:[.3,.45,.55], b:[.25,.3,.4], c:[1,1,1], d:[.5,.55,.6] },
+  { name:"Néon",        accent:"#22ffea", accent2:"#ff2bd6", css:"linear-gradient(90deg,#05010a,#ff00d4,#7a00ff,#00fff0,#caff00)", a:[.5,.5,.5], b:[.5,.5,.5], c:[1,1,1], d:[.1,.6,.9] },
+];
+
+/* ===================== État ===================== */
+const state = {
+  shape:0, julia:false, power:2.0,
+  center:[-0.5, 0.0], scale:3.0,
+  iter:320, palette:0,
+  style:0, stripe:6.0,
+  dens:1.0, off:0.0, sat:1.0, bright:1.0, invert:false,
+  jc:[-0.7, 0.27],
+  aa:1, exportScale:1, cycle:false,
+};
+const DEFAULTS = JSON.parse(JSON.stringify(state));
+
+function home(){
+  if(state.julia) return { center:[0,0], scale:3.2 };
+  return ({
+    0:{ center:[-0.5, 0.0],  scale:3.0 },
+    1:{ center:[-0.5,-0.5],  scale:3.6 },
+    2:{ center:[-0.25,0.0],  scale:3.4 },
+    3:{ center:[-0.5, 0.0],  scale:3.2 },
+  })[state.shape];
+}
+
+/* ===================== WebGL ===================== */
+const canvas = document.getElementById("gl");
+const gl = canvas.getContext("webgl", { preserveDrawingBuffer:true, antialias:false, alpha:false });
+if(!gl){
+  document.body.innerHTML = '<div style="color:#ececf2;font-family:sans-serif;padding:32px;line-height:1.6"><h2>WebGL indisponible</h2><p>Cet appareil ou ce navigateur ne prend pas en charge WebGL, nécessaire au rendu des fractales.</p></div>';
+  throw new Error("WebGL non disponible");
+}
+
+const FRAG = `
+precision highp float;
+uniform vec2  u_res;
+uniform vec2  u_center;
+uniform float u_scale;
+uniform int   u_iter;
+uniform int   u_shape;     // 0 std, 1 vaisseau, 2 tricorn, 3 celtique
+uniform int   u_julia;     // 0/1
+uniform vec2  u_jc;        // paramètre c (mode Julia)
+uniform float u_power;     // exposant
+uniform float u_dens;
+uniform float u_off;
+uniform int   u_style;     // 0 lisse, 1 bandes, 2 rayures
+uniform float u_stripe;    // fréquence des rayures
+uniform float u_sat;
+uniform float u_bright;
+uniform int   u_invert;    // 0/1
+uniform int   u_aa;        // 1 ou 2
+uniform vec3  u_a; uniform vec3 u_b; uniform vec3 u_c; uniform vec3 u_d;
+
+const float LOG_R = 2.7725887;   // log(16) = log(sqrt(256))
+
+vec3 pal(float t){ return clamp(u_a + u_b*cos(6.28318530718*(u_c*t + u_d)), 0.0, 1.0); }
+
+vec3 fractalColor(vec2 frag){
+  vec2 uv = (frag - 0.5*u_res)/u_res.y;
+  vec2 pt = u_center + uv*u_scale;
+  vec2 z, c;
+  if(u_julia==1){ z = pt; c = u_jc; } else { z = vec2(0.0); c = pt; }
+
+  bool p2 = abs(u_power - 2.0) < 0.0006;
+  bool escaped = false;
+  float nu = 0.0;
+  float sSum = 0.0, sLast = 0.0; int sN = 0;
+
+  const int CAP = 1000;
+  for(int i=0;i<CAP;i++){
+    if(i>=u_iter) break;
+    vec2 w = (u_shape==1) ? abs(z) : z;            // Vaisseau ardent : |z|
+    vec2 zp;
+    if(p2){
+      zp = vec2(w.x*w.x - w.y*w.y, 2.0*w.x*w.y);
+      if(u_shape==2) zp.y = -zp.y;                 // Tricorn : conjugué
+    } else {
+      float r = length(w);
+      float ang = (u_shape==2 ? -u_power : u_power) * atan(w.y, w.x);
+      zp = pow(r, u_power) * vec2(cos(ang), sin(ang));
+    }
+    if(u_shape==3) zp.x = abs(zp.x);               // Celtique : |Re| après puissance
+    z = zp + c;
+
+    if(u_style==2){                                // accumulation pour les rayures
+      float uu = 0.5 + 0.5*sin(u_stripe * atan(z.y, z.x));
+      sLast = sSum; sSum += uu; sN += 1;
+    }
+
+    float m = dot(z,z);
+    if(m > 256.0){
+      nu = float(i) + 1.0 - log(0.5*log(m)/LOG_R)/log(u_power);  // itération lissée
+      escaped = true; break;
+    }
+  }
+
+  if(!escaped) return vec3(0.012,0.012,0.020);
+
+  float t;
+  if(u_style==2){
+    float frac = nu - floor(nu);
+    float A  = sSum / max(1.0, float(sN));
+    float Ap = (sN>1) ? sLast/float(sN-1) : A;
+    float s  = mix(Ap, A, frac);
+    t = s * 3.0 * u_dens + u_off;
+  } else {
+    float v = (u_style==1) ? floor(nu) : nu;
+    t = v * 0.025 * u_dens + u_off;
+  }
+  if(u_invert==1) t = -t;
+
+  vec3 col = pal(t) * u_bright;
+  float luma = dot(col, vec3(0.299,0.587,0.114));
+  col = mix(vec3(luma), col, u_sat);
+  return clamp(col, 0.0, 1.0);
+}
+
+void main(){
+  vec3 col;
+  if(u_aa==2){
+    col = 0.25*( fractalColor(gl_FragCoord.xy + vec2(-0.25,-0.25))
+               + fractalColor(gl_FragCoord.xy + vec2( 0.25,-0.25))
+               + fractalColor(gl_FragCoord.xy + vec2(-0.25, 0.25))
+               + fractalColor(gl_FragCoord.xy + vec2( 0.25, 0.25)) );
+  } else {
+    col = fractalColor(gl_FragCoord.xy);
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, "attribute vec2 p; void main(){ gl_Position=vec4(p,0.0,1.0); }"));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog); gl.useProgram(prog);
+
+const vbuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const pLoc = gl.getAttribLocation(prog, "p");
+gl.enableVertexAttribArray(pLoc);
+gl.vertexAttribPointer(pLoc, 2, gl.FLOAT, false, 0, 0);
+
+const U = n => gl.getUniformLocation(prog, n);
+const u = {
+  res:U("u_res"), center:U("u_center"), scale:U("u_scale"), iter:U("u_iter"),
+  shape:U("u_shape"), julia:U("u_julia"), jc:U("u_jc"), power:U("u_power"),
+  dens:U("u_dens"), off:U("u_off"), style:U("u_style"), stripe:U("u_stripe"),
+  sat:U("u_sat"), bright:U("u_bright"), invert:U("u_invert"), aa:U("u_aa"),
+  a:U("u_a"), b:U("u_b"), c:U("u_c"), d:U("u_d"),
+};
+
+/* ===================== Rendu ===================== */
+let interacting = false, idleTimer = null;
+function markInteracting(){ interacting = true; clearTimeout(idleTimer); idleTimer = setTimeout(()=>{ interacting=false; render(); }, 130); }
+
+function render(){
+  const P = PALETTES[state.palette];
+  gl.uniform2f(u.res, canvas.width, canvas.height);
+  gl.uniform2f(u.center, state.center[0], state.center[1]);
+  gl.uniform1f(u.scale, state.scale);
+  gl.uniform1i(u.iter, interacting ? Math.min(state.iter, 150) : state.iter);
+  gl.uniform1i(u.shape, state.shape);
+  gl.uniform1i(u.julia, state.julia ? 1 : 0);
+  gl.uniform2f(u.jc, state.jc[0], state.jc[1]);
+  gl.uniform1f(u.power, state.power);
+  gl.uniform1f(u.dens, state.dens);
+  gl.uniform1f(u.off, state.off);
+  gl.uniform1i(u.style, state.style);
+  gl.uniform1f(u.stripe, state.stripe);
+  gl.uniform1f(u.sat, state.sat);
+  gl.uniform1f(u.bright, state.bright);
+  gl.uniform1i(u.invert, state.invert ? 1 : 0);
+  gl.uniform1i(u.aa, interacting ? 1 : state.aa);   // pas d'anti-crénelage pendant l'interaction
+  gl.uniform3fv(u.a, P.a); gl.uniform3fv(u.b, P.b); gl.uniform3fv(u.c, P.c); gl.uniform3fv(u.d, P.d);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  updateReadout();
+  scheduleHash();
+}
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.floor(innerWidth  * dpr));
+  const h = Math.max(1, Math.floor(innerHeight * dpr));
+  if(canvas.width !== w || canvas.height !== h){ canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  render();
+}
+
+/* ===================== Lecture ===================== */
+const coordsEl = document.getElementById("coords");
+const zoomEl   = document.getElementById("zoom");
+function fmtZoom(z){
+  if(z < 1000) return "×" + z.toFixed(z < 10 ? 1 : 0);
+  if(z < 1e6)  return "×" + (z/1e3).toFixed(1) + "k";
+  return "×" + z.toExponential(1).replace("e+", "e");
+}
+function updateReadout(){
+  const zoom = home().scale / state.scale;
+  const dec  = Math.min(12, Math.max(3, Math.round(Math.log10(1/state.scale)) + 3));
+  const fmt  = v => (v < 0 ? "−" : " ") + Math.abs(v).toFixed(dec);
+  coordsEl.innerHTML = "re " + fmt(state.center[0]) + "&nbsp;&nbsp;im " + fmt(state.center[1]);
+  zoomEl.textContent = fmtZoom(zoom);
+}
+
+/* ===================== Navigation ===================== */
+function screenToComplex(rx, ry, r){
+  const uvx = (rx - r.width/2) / r.height;
+  const uvy = ((r.height - ry) - r.height/2) / r.height;
+  return [ state.center[0] + uvx*state.scale, state.center[1] + uvy*state.scale ];
+}
+function anchorComplexAt(cpx, rx, ry, r){
+  const uvx = (rx - r.width/2) / r.height;
+  const uvy = ((r.height - ry) - r.height/2) / r.height;
+  state.center[0] = cpx[0] - uvx*state.scale;
+  state.center[1] = cpx[1] - uvy*state.scale;
+}
+function panPixels(dx, dy, hCss){ const cpp = state.scale / hCss; state.center[0] -= dx*cpp; state.center[1] += dy*cpp; }
+const MIN_SCALE = 4e-13;
+function zoomAt(clientX, clientY, factor){
+  const r = canvas.getBoundingClientRect();
+  const rx = clientX - r.left, ry = clientY - r.top;
+  const anchor = screenToComplex(rx, ry, r);
+  state.scale = Math.min(8, Math.max(MIN_SCALE, state.scale * factor));
+  anchorComplexAt(anchor, rx, ry, r);
+  markInteracting(); render();
+}
+
+let mDown=false, mLX=0, mLY=0;
+canvas.addEventListener("mousedown", e=>{ mDown=true; mLX=e.clientX; mLY=e.clientY; });
+window.addEventListener("mousemove", e=>{ if(!mDown) return; const r=canvas.getBoundingClientRect(); panPixels(e.clientX-mLX, e.clientY-mLY, r.height); mLX=e.clientX; mLY=e.clientY; markInteracting(); render(); });
+window.addEventListener("mouseup", ()=> mDown=false);
+canvas.addEventListener("wheel", e=>{ e.preventDefault(); zoomAt(e.clientX, e.clientY, e.deltaY>0 ? 1.14 : 1/1.14); }, {passive:false});
+canvas.addEventListener("dblclick", e=>{ e.preventDefault(); zoomAt(e.clientX, e.clientY, 1/2.4); });
+
+let tMode=null, tLX=0, tLY=0, tDist=0, tScale=0, pAnchor=null;
+const tdist = (a,b)=> Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+canvas.addEventListener("touchstart", e=>{
+  e.preventDefault(); const r=canvas.getBoundingClientRect();
+  if(e.touches.length===1){ tMode="pan"; tLX=e.touches[0].clientX; tLY=e.touches[0].clientY; }
+  else if(e.touches.length>=2){ tMode="pinch"; tDist=tdist(e.touches[0],e.touches[1]); tScale=state.scale;
+    const mx=(e.touches[0].clientX+e.touches[1].clientX)/2 - r.left, my=(e.touches[0].clientY+e.touches[1].clientY)/2 - r.top;
+    pAnchor=screenToComplex(mx,my,r);
+  }
+  markInteracting();
+}, {passive:false});
+canvas.addEventListener("touchmove", e=>{
+  e.preventDefault(); const r=canvas.getBoundingClientRect();
+  if(tMode==="pan" && e.touches.length===1){
+    const x=e.touches[0].clientX, y=e.touches[0].clientY; panPixels(x-tLX, y-tLY, r.height); tLX=x; tLY=y;
+  } else if(tMode==="pinch" && e.touches.length>=2){
+    const d=tdist(e.touches[0],e.touches[1]);
+    const mx=(e.touches[0].clientX+e.touches[1].clientX)/2 - r.left, my=(e.touches[0].clientY+e.touches[1].clientY)/2 - r.top;
+    state.scale = Math.min(8, Math.max(MIN_SCALE, tScale * (tDist / Math.max(1,d))));
+    anchorComplexAt(pAnchor, mx, my, r);
+  }
+  markInteracting(); render();
+}, {passive:false});
+canvas.addEventListener("touchend", e=>{
+  if(e.touches.length===0){ tMode=null; render(); }
+  else if(e.touches.length===1){ tMode="pan"; tLX=e.touches[0].clientX; tLY=e.touches[0].clientY; }
+}, {passive:false});
+
+/* ===================== Interface ===================== */
+const $ = id => document.getElementById(id);
+const root = document.documentElement;
+function setAccent(P){ root.style.setProperty("--accent", P.accent); root.style.setProperty("--accent-2", P.accent2); }
+const signed = x => (x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
+
+const panel=$("panel"), toggle=$("toggle"), formeGrid=$("formeGrid"), juliaSw=$("juliaSw"), juliaGroup=$("juliaGroup");
+const power=$("power"), powerVal=$("powerVal"), jr=$("jr"), ji=$("ji"), jrVal=$("jrVal"), jiVal=$("jiVal"), anim=$("anim");
+const palettesEl=$("palettes"), styleSeg=$("styleSeg"), stripeGroup=$("stripeGroup"), stripe=$("stripe"), stripeVal=$("stripeVal");
+const dens=$("dens"), densVal=$("densVal"), off=$("off"), offVal=$("offVal"), sat=$("sat"), satVal=$("satVal"), bright=$("bright"), brightVal=$("brightVal");
+const iter=$("iter"), iterVal=$("iterVal"), invertSw=$("invertSw"), cycleSw=$("cycleSw"), qualSeg=$("qualSeg"), expSeg=$("expSeg");
+const surprise=$("surprise"), resetAll=$("resetAll"), recenter=$("recenter"), save=$("save"), copylink=$("copylink");
+
+toggle.addEventListener("click", ()=>{ const open=panel.classList.toggle("open"); toggle.setAttribute("aria-label", open?"Fermer les réglages":"Ouvrir les réglages"); });
+
+function setSeg(container, attr, value){ container.querySelectorAll("button").forEach(b=> b.classList.toggle("on", +b.dataset[attr]===value)); }
+
+function buildPalettes(){
+  PALETTES.forEach((P,i)=>{
+    const d=document.createElement("div");
+    d.className="sw"; d.style.background=P.css;
+    d.innerHTML='<span class="nm">'+P.name+'</span>';
+    d.setAttribute("role","button"); d.setAttribute("aria-label","Palette "+P.name);
+    d.addEventListener("click", ()=>{ state.palette=i; [...palettesEl.children].forEach(c=>c.classList.remove("on")); d.classList.add("on"); setAccent(P); render(); });
+    palettesEl.appendChild(d);
+  });
+}
+
+function syncUI(){
+  setSeg(formeGrid,"shape",state.shape);
+  juliaSw.classList.toggle("on",state.julia); juliaSw.setAttribute("aria-checked", state.julia?"true":"false"); juliaGroup.classList.toggle("show",state.julia);
+  power.value=state.power; powerVal.textContent=state.power.toFixed(1);
+  jr.value=state.jc[0]; jrVal.textContent=signed(state.jc[0]);
+  ji.value=state.jc[1]; jiVal.textContent=signed(state.jc[1]);
+  [...palettesEl.children].forEach((c,i)=> c.classList.toggle("on", i===state.palette)); setAccent(PALETTES[state.palette]);
+  setSeg(styleSeg,"style",state.style); stripeGroup.classList.toggle("show",state.style===2);
+  stripe.value=state.stripe; stripeVal.textContent=state.stripe.toFixed(0);
+  iter.value=state.iter; iterVal.textContent=String(state.iter);
+  dens.value=state.dens; densVal.textContent=state.dens.toFixed(1);
+  off.value=state.off; offVal.textContent=state.off.toFixed(2);
+  sat.value=state.sat; satVal.textContent=state.sat.toFixed(2);
+  bright.value=state.bright; brightVal.textContent=state.bright.toFixed(2);
+  invertSw.classList.toggle("on",state.invert); invertSw.setAttribute("aria-checked", state.invert?"true":"false");
+  cycleSw.classList.toggle("on",state.cycle); cycleSw.setAttribute("aria-checked", state.cycle?"true":"false");
+  setSeg(qualSeg,"aa",state.aa); setSeg(expSeg,"exp",state.exportScale);
+}
+
+/* Forme / Julia / puissance */
+formeGrid.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{
+  state.shape=+b.dataset.shape; const h=home(); state.center=h.center.slice(); state.scale=h.scale; syncUI(); render();
+}));
+juliaSw.addEventListener("click", ()=>{
+  state.julia=!state.julia; if(!state.julia && juliaAnim) stopAnim();
+  const h=home(); state.center=h.center.slice(); state.scale=h.scale; syncUI(); render();
+});
+power.addEventListener("input", ()=>{ state.power=parseFloat(power.value); powerVal.textContent=state.power.toFixed(1); render(); });
+jr.addEventListener("input", ()=>{ state.jc[0]=parseFloat(jr.value); jrVal.textContent=signed(state.jc[0]); render(); });
+ji.addEventListener("input", ()=>{ state.jc[1]=parseFloat(ji.value); jiVal.textContent=signed(state.jc[1]); render(); });
+
+/* Couleur */
+styleSeg.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{ state.style=+b.dataset.style; setSeg(styleSeg,"style",state.style); stripeGroup.classList.toggle("show",state.style===2); render(); }));
+stripe.addEventListener("input", ()=>{ state.stripe=parseFloat(stripe.value); stripeVal.textContent=state.stripe.toFixed(0); render(); });
+dens.addEventListener("input", ()=>{ state.dens=parseFloat(dens.value); densVal.textContent=state.dens.toFixed(1); render(); });
+off.addEventListener("input", ()=>{ state.off=parseFloat(off.value); offVal.textContent=state.off.toFixed(2); render(); });
+sat.addEventListener("input", ()=>{ state.sat=parseFloat(sat.value); satVal.textContent=state.sat.toFixed(2); render(); });
+bright.addEventListener("input", ()=>{ state.bright=parseFloat(bright.value); brightVal.textContent=state.bright.toFixed(2); render(); });
+invertSw.addEventListener("click", ()=>{ state.invert=!state.invert; invertSw.classList.toggle("on",state.invert); invertSw.setAttribute("aria-checked", state.invert?"true":"false"); render(); });
+
+/* Rendu */
+iter.addEventListener("input", ()=>{ state.iter=parseInt(iter.value,10); iterVal.textContent=String(state.iter); render(); });
+qualSeg.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{ state.aa=+b.dataset.aa; setSeg(qualSeg,"aa",state.aa); render(); }));
+expSeg.querySelectorAll("button").forEach(b=> b.addEventListener("click", ()=>{ state.exportScale=+b.dataset.exp; setSeg(expSeg,"exp",state.exportScale); }));
+
+/* Animations (boucle unique pour cycle des couleurs + paramètre Julia) */
+let rafId=null, juliaAnim=false, theta=0;
+function tick(){
+  if(state.cycle){ state.off=(state.off+0.0015)%1; off.value=state.off.toFixed(3); offVal.textContent=state.off.toFixed(2); }
+  if(juliaAnim){
+    theta+=0.008;
+    state.jc[0]=0.7885*Math.cos(theta); state.jc[1]=0.7885*Math.sin(theta);
+    jr.value=state.jc[0].toFixed(3); ji.value=state.jc[1].toFixed(3);
+    jrVal.textContent=signed(state.jc[0]); jiVal.textContent=signed(state.jc[1]);
+  }
+  render();
+  rafId = (state.cycle||juliaAnim) ? requestAnimationFrame(tick) : null;
+}
+function ensureLoop(){ if(!rafId && (state.cycle||juliaAnim)) rafId=requestAnimationFrame(tick); }
+function startAnim(){ if(!state.julia){ state.julia=true; const h=home(); state.center=h.center.slice(); state.scale=h.scale; } juliaAnim=true; anim.textContent="Arrêter l'animation"; syncUI(); ensureLoop(); }
+function stopAnim(){ juliaAnim=false; anim.textContent="Animer le paramètre"; render(); }
+anim.addEventListener("click", ()=> juliaAnim ? stopAnim() : startAnim());
+cycleSw.addEventListener("click", ()=>{ state.cycle=!state.cycle; cycleSw.classList.toggle("on",state.cycle); cycleSw.setAttribute("aria-checked", state.cycle?"true":"false"); if(state.cycle) ensureLoop(); else render(); });
+
+/* Actions */
+recenter.addEventListener("click", ()=>{ const h=home(); state.center=h.center.slice(); state.scale=h.scale; render(); });
+
+const rand = (a,b)=> a+Math.random()*(b-a);
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+surprise.addEventListener("click", ()=>{
+  if(juliaAnim) stopAnim();
+  state.shape  = Math.floor(rand(0,4));
+  state.julia  = Math.random()<0.5;
+  state.power  = Math.random()<0.55 ? 2.0 : Math.round(rand(2,7)*10)/10;
+  state.palette= Math.floor(rand(0,PALETTES.length));
+  state.style  = pick([0,0,0,1,2]);
+  state.dens   = Math.round(rand(0.6,2.2)*10)/10;
+  state.off    = Math.round(rand(0,1)*100)/100;
+  state.sat    = Math.round(rand(0.8,1.4)*100)/100;
+  state.bright = Math.round(rand(0.85,1.2)*100)/100;
+  state.invert = Math.random()<0.3;
+  if(state.julia){ const c=pick([[-0.7,0.27],[-0.8,0.156],[0.285,0.01],[-0.4,0.6],[0.355,0.355],[-0.70176,-0.3842],[-0.835,-0.2321],[0.37,0.1]]); state.jc=[c[0],c[1]]; }
+  const h=home(); state.center=h.center.slice(); state.scale=h.scale;
+  syncUI(); render();
+});
+resetAll.addEventListener("click", ()=>{
+  if(juliaAnim) stopAnim();
+  const d=JSON.parse(JSON.stringify(DEFAULTS));
+  Object.assign(state, d); state.center=d.center.slice(); state.jc=d.jc.slice(); state.cycle=false;
+  syncUI(); render();
+});
+
+function downloadBlob(b){ if(!b) return; const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="fractale-"+Date.now()+".png"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+save.addEventListener("click", ()=>{
+  const s=state.exportScale;
+  if(s>1){
+    const cap=((gl.getParameter(gl.MAX_VIEWPORT_DIMS)||[4096,4096])[0])||4096;
+    const ow=canvas.width, oh=canvas.height;
+    const w=Math.min(ow*s, cap), h=Math.min(oh*s, cap);
+    interacting=false;
+    canvas.width=w; canvas.height=h; gl.viewport(0,0,w,h); render();
+    canvas.toBlob(b=>{ downloadBlob(b); resize(); }, "image/png");
+  } else {
+    interacting=false; render();
+    canvas.toBlob(b=>{ downloadBlob(b); }, "image/png");
+  }
+});
+
+/* Lien partageable (état encodé dans l'URL) */
+let hashTimer=null;
+function scheduleHash(){ clearTimeout(hashTimer); hashTimer=setTimeout(writeHash, 600); }
+function writeHash(){
+  const s=state;
+  const d={ sh:s.shape, ju:s.julia?1:0, pw:+s.power.toFixed(3), cx:+s.center[0].toFixed(15), cy:+s.center[1].toFixed(15),
+    sc:+s.scale.toExponential(6), it:s.iter, pa:s.palette, st:s.style, sp:+s.stripe.toFixed(1),
+    de:+s.dens.toFixed(2), of:+s.off.toFixed(3), sa:+s.sat.toFixed(2), br:+s.bright.toFixed(2),
+    iv:s.invert?1:0, jx:+s.jc[0].toFixed(4), jy:+s.jc[1].toFixed(4) };
+  try{ history.replaceState(null, "", "#"+encodeURIComponent(JSON.stringify(d))); }catch(e){}
+}
+function readHash(){
+  if(!location.hash || location.hash.length<2) return;
+  try{
+    const d=JSON.parse(decodeURIComponent(location.hash.slice(1)));
+    if(typeof d!=="object"||d===null) return;
+    if(d.sh!=null) state.shape=Math.max(0,Math.min(3,d.sh|0));
+    state.julia=!!d.ju;
+    if(d.pw!=null) state.power=Math.max(2,Math.min(8,+d.pw));
+    if(d.cx!=null) state.center[0]=+d.cx;
+    if(d.cy!=null) state.center[1]=+d.cy;
+    if(d.sc!=null) state.scale=Math.max(MIN_SCALE,+d.sc);
+    if(d.it!=null) state.iter=Math.max(50,Math.min(1000,d.it|0));
+    if(d.pa!=null) state.palette=Math.max(0,Math.min(PALETTES.length-1,d.pa|0));
+    if(d.st!=null) state.style=Math.max(0,Math.min(2,d.st|0));
+    if(d.sp!=null) state.stripe=+d.sp;
+    if(d.de!=null) state.dens=+d.de;
+    if(d.of!=null) state.off=+d.of;
+    if(d.sa!=null) state.sat=+d.sa;
+    if(d.br!=null) state.bright=+d.br;
+    state.invert=!!d.iv;
+    if(d.jx!=null) state.jc[0]=+d.jx;
+    if(d.jy!=null) state.jc[1]=+d.jy;
+  }catch(e){}
+}
+copylink.addEventListener("click", async ()=>{
+  writeHash();
+  try{ await navigator.clipboard.writeText(location.href); copylink.textContent="Lien copié ✓"; }
+  catch(e){ copylink.textContent="Copie indisponible ici"; }
+  setTimeout(()=> copylink.textContent="Copier le lien de cette vue", 1700);
+});
+
+/* ===================== Démarrage ===================== */
+buildPalettes();
+readHash();
+syncUI();
+window.addEventListener("resize", resize);
+window.addEventListener("orientationchange", ()=> setTimeout(resize, 150));
+resize();
+</script>
+<script>
+/* Enregistrement du service worker (fonctionnement hors-ligne).
+   Nécessite https ou localhost ; sans effet en ouverture par fichier (file://). */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("./sw.js").catch(function () {});
+  });
+}
+</script>
+</body>
+</html>

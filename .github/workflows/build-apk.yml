@@ -1,0 +1,74 @@
+name: Construire l'APK
+
+# Se déclenche à chaque push (toutes branches) et manuellement depuis l'onglet Actions.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Java 17 (requis par Cordova Android)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Installer Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer Cordova
+        run: npm install -g cordova@12
+
+      - name: Préparer le projet Cordova
+        run: |
+          cordova create build com.fractales.atelier "Atelier de Fractales"
+          rm -rf build/www
+          mkdir -p build/www
+          cp index.html manifest.webmanifest sw.js build/www/
+          cp icon-192.png icon-512.png icon-maskable-512.png apple-touch-icon.png icon-32.png build/www/
+          cp icon-512.png build/icon-512.png
+          cp config.xml build/config.xml
+
+      - name: Accepter les licences du SDK Android
+        run: yes | sdkmanager --licenses || true
+
+      - name: Ajouter la plateforme Android
+        working-directory: build
+        # En cas d'échec, essayez 'android@12.0.1' (très éprouvée) à la place.
+        run: cordova platform add android@13.0.0
+
+      - name: Construire l'APK (debug)
+        working-directory: build
+        run: cordova build android --verbose
+
+      - name: Localiser l'APK
+        id: apk
+        run: |
+          APK=$(find build -name "*.apk" | head -n 1)
+          echo "APK trouvé : $APK"
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Téléverser l'APK (artefact du run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: atelier-fractales-apk
+          path: ${{ steps.apk.outputs.path }}
+
+      - name: Publier l'APK dans une Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: APK – build ${{ github.run_number }}
+          body: "APK de l'Atelier de Fractales (signé avec la clé de debug, à installer manuellement)."
+          files: ${{ steps.apk.outputs.path }}
