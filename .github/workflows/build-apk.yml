@@ -31,6 +31,12 @@ jobs:
       - name: Installer le SDK Android
         uses: android-actions/setup-android@v3
 
+      - name: Forcer Gradle 8.0.2 comme Gradle systeme
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.0.2-bin.zip -O /tmp/gradle.zip
+          unzip -q -d "$HOME/gradle" /tmp/gradle.zip
+          echo "$HOME/gradle/gradle-8.0.2/bin" >> "$GITHUB_PATH"
+
       - name: Composants Android + licences
         run: |
           yes | sdkmanager --licenses || true
@@ -38,6 +44,9 @@ jobs:
 
       - name: Installer Cordova
         run: npm install -g cordova@12
+
+      - name: Verifier Gradle systeme
+        run: gradle -v
 
       - name: Preparer le projet Cordova
         run: |
