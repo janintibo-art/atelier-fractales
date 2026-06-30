@@ -7,15 +7,14 @@ on:
 permissions:
   contents: write
 
-# Force la distribution Gradle utilisée par le wrapper de cordova-android.
 env:
-  CORDOVA_ANDROID_GRADLE_DISTRIBUTION_URL: https://services.gradle.org/distributions/gradle-8.7-all.zip
+  CORDOVA_ANDROID_GRADLE_DISTRIBUTION_URL: https://services.gradle.org/distributions/gradle-8.0.2-all.zip
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Récupérer le dépôt
+      - name: Recuperer le depot
         uses: actions/checkout@v4
 
       - name: Installer Java 17
@@ -32,29 +31,15 @@ jobs:
       - name: Installer le SDK Android
         uses: android-actions/setup-android@v3
 
-      - name: Forcer Gradle 8.7 (compatibilité cordova-android 13)
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip -O /tmp/gradle.zip
-          unzip -q -d "$HOME/gradle" /tmp/gradle.zip
-          echo "$HOME/gradle/gradle-8.7/bin" >> "$GITHUB_PATH"
-
       - name: Composants Android + licences
         run: |
           yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.2"
 
       - name: Installer Cordova
         run: npm install -g cordova@12
 
-      - name: Diagnostic des versions
-        run: |
-          java -version
-          node -v
-          cordova -v
-          which gradle && gradle -v || true
-          echo "ANDROID_HOME=$ANDROID_HOME"
-
-      - name: Préparer le projet Cordova
+      - name: Preparer le projet Cordova
         run: |
           cordova create build com.fractales.atelier "Atelier de Fractales"
           rm -rf build/www
@@ -66,7 +51,7 @@ jobs:
 
       - name: Ajouter la plateforme Android
         working-directory: build
-        run: cordova platform add android@13.0.0
+        run: cordova platform add android@12.0.1
 
       - name: Construire l'APK (debug)
         working-directory: build
@@ -76,10 +61,9 @@ jobs:
         id: apk
         run: |
           APK=$(find build -name "*.apk" | head -n 1)
-          echo "APK trouvé : $APK"
           echo "path=$APK" >> "$GITHUB_OUTPUT"
 
-      - name: Téléverser l'APK (artefact du run)
+      - name: Televerser l'APK (artefact du run)
         uses: actions/upload-artifact@v4
         with:
           name: atelier-fractales-apk
@@ -90,6 +74,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: APK – build ${{ github.run_number }}
-          body: "APK de l'Atelier de Fractales (clé de debug, installation manuelle)."
+          name: APK build ${{ github.run_number }}
           files: ${{ steps.apk.outputs.path }}
