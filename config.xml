@@ -1,17 +1,15 @@
 <?xml version='1.0' encoding='utf-8'?>
 <widget id="com.fractales.atelier" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
     <name>Atelier de Fractales</name>
-    <description>Explorateur de fractales en temps réel : Mandelbrot, Julia, Vaisseau ardent, Tricorn et Celtique.</description>
+    <description>Explorateur de fractales en temps reel : Mandelbrot, Julia, Vaisseau ardent, Tricorn et Celtique.</description>
     <author>Atelier de Fractales</author>
     <content src="index.html" />
 
     <preference name="Orientation" value="default" />
     <preference name="Fullscreen" value="true" />
     <preference name="BackgroundColor" value="0xFF060608" />
-    <preference name="AndroidWindowSplashScreenBackgroundColor" value="0xFF060608" />
     <preference name="android-minSdkVersion" value="24" />
-    <preference name="android-targetSdkVersion" value="34" />
-    <preference name="AndroidInsecureFileModeEnabled" value="true" />
+    <preference name="android-targetSdkVersion" value="33" />
 
     <allow-navigation href="*" />
     <icon src="icon-512.png" />
